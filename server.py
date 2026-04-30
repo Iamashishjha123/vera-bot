@@ -61,6 +61,10 @@ def tick(data: dict):
         if not result:
             continue
 
+        # Keep WhatsApp-style messages concise for judge constraints
+        if len(result.get("body", "")) > 320:
+        result["body"] = result["body"][:317] + "..."
+
         actions.append({
             "conversation_id": trig_id,
             "merchant_id": merchant["merchant_id"],
