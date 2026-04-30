@@ -36,7 +36,15 @@ def context(data: dict):
 def tick(data: dict):
     actions = []
 
-    for trig_id in data["available_triggers"]:
+    trigger_ids = data.get("available_triggers", [])
+
+    def trigger_priority(tid):
+        t = store["trigger"].get(tid, {})
+        return t.get("urgency", 0)
+
+    trigger_ids = sorted(trigger_ids, key=trigger_priority, reverse=True)
+
+    for trig_id in trigger_ids[:3]:
         trigger = store["trigger"].get(trig_id)
         if not trigger:
             continue
