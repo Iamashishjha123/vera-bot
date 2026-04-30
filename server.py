@@ -1,11 +1,11 @@
+import time
+import uuid
+from datetime import datetime
 from fastapi import FastAPI
 from bot import compose, respond
 
 app = FastAPI()
-
-@app.get("/")
-def root():
-    return {"message": "Vera bot is running"}
+START_TIME = time.time()
 
 store = {
     "category": {},
@@ -14,46 +14,114 @@ store = {
     "trigger": {}
 }
 
+versions = {
+    "category": {},
+    "merchant": {},
+    "customer": {},
+    "trigger": {}
+}
+
+conversations = {}
+
+
+@app.get("/")
+def root():
+    return {"message": "Vera bot is running"}
+
+
 @app.get("/v1/healthz")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "uptime_seconds": int(time.time() - START_TIME),
+        "contexts_loaded": {
+            "category": len(store["category"]),
+            "merchant": len(store["merchant"]),
+            "customer": len(store["customer"]),
+            "trigger": len(store["trigger"])
+        }
+    }
+
 
 @app.get("/v1/metadata")
 def metadata():
     return {
         "team_name": "Ashish Bot",
-        "team_members": ["Ashish"],
-        "approach": "Deterministic, data-driven messaging engine",
-        "version": "2.0"
+        "team_members": ["Ashish Jha"],
+        "model": "deterministic-rule-engine",
+        "approach": "4-context composer with trigger routing, consent checks, urgency ranking, and multi-turn handling",
+        "version": "3.0",
+        "submitted_at": datetime.utcnow().isoformat() + "Z"
     }
+
 
 @app.post("/v1/context")
 def context(data: dict):
-    store[data["scope"]][data["context_id"]] = data["payload"]
-    return {"accepted": True}
+    scope = data.get("scope")
+    cid = data.get("context_id")
+    version = data.get("version", 1)
+    payload = data.get("payload", {})
+
+    if scope not in store:
+        return {
+            "accepted": False,
+            "reason": "invalid_scope",
+            "details": f"Unknown scope: {scope}"
+        }
+
+    current_version = versions[scope].get(cid, 0)
+
+    if version < current_version:
+        return {
+            "accepted": False,
+            "reason": "stale_version",
+            "current_version": current_version
+        }
+
+    if version == current_version:
+        return {
+            "accepted": True,
+            "ack_id": f"ack_{scope}_{cid}_{version}",
+            "stored_at": datetime.utcnow().isoformat() + "Z"
+        }
+
+    store[scope][cid] = payload
+    versions[scope][cid] = version
+
+    return {
+        "accepted": True,
+        "ack_id": f"ack_{scope}_{cid}_{version}",
+        "stored_at": datetime.utcnow().isoformat() + "Z"
+    }
+
 
 @app.post("/v1/tick")
 def tick(data: dict):
     actions = []
-
     trigger_ids = data.get("available_triggers", [])
 
     def trigger_priority(tid):
-        t = store["trigger"].get(tid, {})
-        return t.get("urgency", 0)
+        trigger = store["trigger"].get(tid, {})
+        return trigger.get("urgency", 0)
 
     trigger_ids = sorted(trigger_ids, key=trigger_priority, reverse=True)
+    used_merchants = set()
 
-    for trig_id in trigger_ids[:3]:
+    for trig_id in trigger_ids[:5]:
         trigger = store["trigger"].get(trig_id)
         if not trigger:
             continue
 
-        merchant = store["merchant"].get(trigger["merchant_id"])
+        merchant_id = trigger.get("merchant_id") or trigger.get("payload", {}).get("merchant_id")
+        merchant = store["merchant"].get(merchant_id)
         if not merchant:
             continue
 
-        category = store["category"].get(merchant.get("category_slug"), {})
+        if merchant_id in used_merchants:
+            continue
+
+        category_slug = merchant.get("category_slug")
+        category = store["category"].get(category_slug, {})
         customer = store["customer"].get(trigger.get("customer_id"))
 
         result = compose(category, merchant, trigger, customer)
@@ -61,47 +129,76 @@ def tick(data: dict):
         if not result:
             continue
 
-        # Keep WhatsApp-style messages concise for judge constraints
-        body_text = result.get("body", "")
+        conv_id = f"conv_{uuid.uuid4().hex[:10]}"
 
-        if len(body_text) > 320:
-            result["body"] = body_text[:317] + "..."
-
-        actions.append({
-            "conversation_id": trig_id,
-            "merchant_id": merchant["merchant_id"],
+        action = {
+            "conversation_id": conv_id,
+            "merchant_id": merchant_id,
             "customer_id": trigger.get("customer_id"),
-            "send_as": result["send_as"],
+            "send_as": result.get("send_as", "vera"),
             "trigger_id": trig_id,
+            "template_name": result.get("template_name", f"vera_{trigger.get('kind', 'general')}_v1"),
+            "template_params": result.get("template_params", []),
             "body": result["body"],
-            "cta": result["cta"],
-            "suppression_key": result["suppression_key"],
-            "rationale": result["rationale"]
-        })
+            "cta": result.get("cta", "YES/NO"),
+            "suppression_key": result.get("suppression_key", trigger.get("suppression_key")),
+            "rationale": result.get("rationale", "Context-aware Vera message.")
+        }
+
+        conversations[conv_id] = {
+            "merchant_id": merchant_id,
+            "customer_id": trigger.get("customer_id"),
+            "trigger_id": trig_id,
+            "turns": [
+                {
+                    "from": "bot",
+                    "body": action["body"],
+                    "ts": datetime.utcnow().isoformat() + "Z"
+                }
+            ]
+        }
+
+        actions.append(action)
+        used_merchants.add(merchant_id)
 
     return {"actions": actions}
 
+
 @app.post("/v1/reply")
 def reply(data: dict):
-    return respond(data.get("message", ""))
+    conv_id = data.get("conversation_id")
+    msg = data.get("message", "")
 
-    if "yes" in msg:
-        return {
-            "action": "send",
-            "body": "Great 👍 I’ll set this up for you right away.",
-            "cta": "none",
-            "rationale": "User accepted"
-        }
+    state = conversations.get(conv_id, {
+        "merchant_id": data.get("merchant_id"),
+        "customer_id": data.get("customer_id"),
+        "turns": []
+    })
 
-    if "no" in msg:
-        return {
-            "action": "end",
-            "rationale": "User declined"
-        }
+    state["turns"].append({
+        "from": data.get("from_role", "merchant"),
+        "body": msg,
+        "ts": data.get("received_at", datetime.utcnow().isoformat() + "Z")
+    })
 
-    return {
-        "action": "send",
-        "body": "Got it. Want me to suggest something specific?",
-        "cta": "open_ended",
-        "rationale": "Continue engagement"
-    }
+    result = respond(state, msg)
+
+    if result.get("action") == "send":
+        state["turns"].append({
+            "from": "bot",
+            "body": result.get("body", ""),
+            "ts": datetime.utcnow().isoformat() + "Z"
+        })
+
+    conversations[conv_id] = state
+    return result
+
+
+@app.post("/v1/teardown")
+def teardown():
+    for scope in store:
+        store[scope].clear()
+        versions[scope].clear()
+
+    conversations.clear()
+    return {"ok": True}

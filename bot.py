@@ -475,3 +475,75 @@ def respond(message):
         "cta": "YES/NO",
         "rationale": "Unclear response; nudging toward a simple next step."
     }
+
+AUTO_REPLY_HINTS = [
+    "thank you for contacting",
+    "we will get back",
+    "automated assistant",
+    "auto reply",
+    "thanks for contacting",
+    "team tak",
+    "hamari team",
+    "main ek automated assistant"
+]
+
+
+def respond(state, merchant_message: str) -> dict:
+    msg = (merchant_message or "").lower().strip()
+    turns = state.get("turns", [])
+
+    merchant_texts = [
+        t.get("body", "").lower().strip()
+        for t in turns
+        if t.get("from") in ["merchant", "customer"]
+    ]
+
+    if len(merchant_texts) >= 2 and merchant_texts[-1] == merchant_texts[-2]:
+        return {
+            "action": "end",
+            "rationale": "Repeated identical merchant reply detected; likely WhatsApp Business auto-reply. Exiting gracefully."
+        }
+
+    if any(x in msg for x in AUTO_REPLY_HINTS):
+        return {
+            "action": "wait",
+            "wait_seconds": 900,
+            "rationale": "Likely WhatsApp Business auto-reply detected; backing off instead of wasting turns."
+        }
+
+    if any(x in msg for x in ["yes", "haan", "ok", "okay", "sure", "go ahead", "kar do", "send", "do it", "let's do it"]):
+        return {
+            "action": "send",
+            "body": "Done 👍 I’ll prepare the draft/action now. You can review before it goes live.",
+            "cta": "none",
+            "rationale": "User accepted; switching from pitch mode to action mode immediately."
+        }
+
+    if any(x in msg for x in ["join", "judna", "register", "start", "onboard", "magicpin judna"]):
+        return {
+            "action": "send",
+            "body": "Great — I’ll start onboarding directly. Please share business name, city, and phone number to continue.",
+            "cta": "open_ended",
+            "rationale": "Detected join/onboarding intent; routed directly to action instead of more qualification."
+        }
+
+    if any(x in msg for x in ["no", "not now", "stop", "later", "nahi", "not interested"]):
+        return {
+            "action": "end",
+            "rationale": "User declined or opted out; graceful exit."
+        }
+
+    if any(x in msg for x in ["gst", "tax", "loan", "website", "instagram"]):
+        return {
+            "action": "send",
+            "body": "I can help with growth actions on your listing first — offers, posts, reviews, customer reminders. Want me to draft the next best one?",
+            "cta": "YES/NO",
+            "rationale": "Off-topic reply handled politely while staying on Vera’s merchant-growth mission."
+        }
+
+    return {
+        "action": "send",
+        "body": "Got it. I’ll keep it simple: one clear next action, no extra steps. Reply YES and I’ll draft it.",
+        "cta": "YES/NO",
+        "rationale": "Unclear reply; nudging toward a single low-friction next step."
+    }
