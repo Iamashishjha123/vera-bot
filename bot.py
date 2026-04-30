@@ -1,4 +1,5 @@
 from typing import Optional
+from conversation_handlers import respond
 
 # ---------- HELPERS ----------
 
@@ -173,51 +174,4 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: Optional[di
         "send_as": "vera",
         "suppression_key": suppression_key,
         "rationale": "Fallback message."
-    }
-
-
-# ---------- REPLY HANDLER ----------
-
-AUTO_REPLY_HINTS = [
-    "thank you for contacting",
-    "automated assistant",
-    "team tak",
-    "auto reply"
-]
-
-
-def respond(state, merchant_message: str) -> dict:
-    msg = merchant_message.lower().strip()
-
-    if any(x in msg for x in AUTO_REPLY_HINTS):
-        return {
-            "action": "wait",
-            "wait_seconds": 900,
-            "rationale": "Auto-reply detected"
-        }
-
-    if "yes" in msg or "haan" in msg:
-        return {
-            "action": "send",
-            "body": "Done 👍 I’ll set this up for you.",
-            "rationale": "User accepted"
-        }
-
-    if "join" in msg or "judna" in msg:
-        return {
-            "action": "send",
-            "body": "Great — I’ll onboard you. Share business name, city & phone.",
-            "rationale": "Intent detected"
-        }
-
-    if "no" in msg or "stop" in msg:
-        return {
-            "action": "end",
-            "rationale": "User declined"
-        }
-
-    return {
-        "action": "send",
-        "body": "Got it. Reply YES and I’ll take care of it.",
-        "rationale": "Fallback"
     }
