@@ -56,4 +56,4 @@
 
 {"test_id":"T29","body":"Pizza Junction, delivery searches are rising.\n\nYou can capture more orders with better visibility.\n\nWant me to improve it?","cta":"YES/NO","send_as":"vera","suppression_key":"delivery:m003","rationale":"Trend + opportunity."}
 
-{"test_id":"T30","body":"GymFit, inactive members haven’t returned in 30 days.\n\nThis is your win-back opportunity.\n\nWant me to message them?","cta":"YES/NO","send_as":"vera","suppression_key":"winback:m004","rationale":"Winback trigger."}
+{"test_id":"T30","body":"GymFit, inactive members haven’t returned in 30 days.\n\nThis is your win-back opportunity.\n\nWant me to message them?","cta":"YES/NO","send_as":"vera","suppression_key":"winback:m004","rationale":"Winback trigger."}      
