@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from bot import compose
+from bot import compose, respond
 
 app = FastAPI()
 
@@ -69,7 +69,7 @@ def tick(data: dict):
 
 @app.post("/v1/reply")
 def reply(data: dict):
-    msg = data.get("message", "").lower()
+    return respond(data.get("message", ""))
 
     if "yes" in msg:
         return {

@@ -1,3 +1,9 @@
+AUTO_REPLY_HINTS = [
+    "thank you for contacting", "we will get back", "business account",
+    "auto reply", "automated", "thanks for contacting"
+]
+
+
 def pct(x):
     try:
         return f"{x * 100:.0f}%"
@@ -24,13 +30,29 @@ def can_message_customer(customer, scope):
         return False
 
     prefs = customer.get("preferences", {})
-    consent = customer.get("consent", {})
-    scopes = consent.get("scope", [])
+    scopes = customer.get("consent", {}).get("scope", [])
 
     if prefs.get("reminder_opt_in") is False:
         return False
 
-    return scope in scopes or "promotional_offers" in scopes
+    return scope in scopes
+
+
+def category_fix(category_slug, merchant):
+    offer = active_offer(merchant)
+
+    if category_slug == "dentists":
+        return offer or "Dental Cleaning @ ₹299"
+    if category_slug == "salons":
+        return offer or "Haircut @ ₹99"
+    if category_slug == "restaurants":
+        return offer or "Meal combo / thali offer"
+    if category_slug == "gyms":
+        return offer or "3 FREE Trial Classes"
+    if category_slug == "pharmacies":
+        return offer or "Free Home Delivery > ₹499"
+
+    return offer or "service+price offer"
 
 
 def compose(category, merchant, trigger, customer=None):
@@ -48,12 +70,11 @@ def compose(category, merchant, trigger, customer=None):
     signals = merchant.get("signals", [])
     subscription = merchant.get("subscription", {})
     offer = active_offer(merchant)
+    suggested_offer = category_fix(category_slug, merchant)
 
-    send_as = "merchant_on_behalf" if trigger.get("scope") == "customer" else "vera"
+    # ---------- MERCHANT TRIGGERS ----------
 
-    # ---------------- MERCHANT-FACING ----------------
-
-    if kind == "perf_dip":
+    if kind in ["perf_dip", "seasonal_perf_dip"]:
         metric = payload.get("metric", "performance")
         delta = payload.get("delta_pct")
         window = payload.get("window", "recently")
@@ -63,16 +84,15 @@ def compose(category, merchant, trigger, customer=None):
             blockers.append("no active offer")
         if "unverified_gbp" in signals:
             blockers.append("GBP not verified")
-        if "dormant_with_vera_14d" in signals or "dormant_with_vera_38d" in signals:
+        if any("dormant_with_vera" in s for s in signals):
             blockers.append("no recent Vera action")
-
-        blocker_text = ", ".join(blockers) if blockers else "conversion weakness"
 
         body = (
             f"{name}, {metric} is down {pct(abs(delta)) if delta else 'recently'} over {window}.\n\n"
             f"Snapshot: {perf.get('views')} views, {perf.get('calls')} calls, CTR {pct(perf.get('ctr'))}.\n"
-            f"Likely blocker: {blocker_text}.\n\n"
-            f"Want me to create one service+price offer + one fresh post for {locality}?"
+            f"Likely blocker: {', '.join(blockers) if blockers else 'conversion weakness'}.\n\n"
+            f"Best fix: push “{suggested_offer}” + one fresh post for {locality}. "
+            f"Reply YES — I’ll draft it now."
         )
 
         return {
@@ -80,14 +100,14 @@ def compose(category, merchant, trigger, customer=None):
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "Performance dip handled using metric drop, merchant performance, and merchant signals."
+            "rationale": "Performance dip handled using metric drop, merchant performance, signals, and category-correct offer."
         }
 
     if kind == "perf_spike":
         body = (
             f"{name}, good momentum — {payload.get('metric', 'calls')} is up {pct(payload.get('delta_pct'))}.\n"
             f"Likely driver: {payload.get('likely_driver', 'recent activity')}.\n\n"
-            "Want me to turn this into a fresh GBP post + WhatsApp campaign?"
+            f"Let’s capture this while demand is warm. Want me to create a post + WhatsApp campaign around “{suggested_offer}”?"
         )
 
         return {
@@ -95,7 +115,7 @@ def compose(category, merchant, trigger, customer=None):
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "Performance spike converted into momentum-capture campaign."
+            "rationale": "Performance spike converted into a momentum-capture action."
         }
 
     if kind == "renewal_due":
@@ -105,20 +125,21 @@ def compose(category, merchant, trigger, customer=None):
 
         body = (
             f"{name}, your {plan} plan expires in {days} days.\n\n"
-            f"You got {perf.get('views')} views and {perf.get('calls')} calls in the last {perf.get('window_days', 30)} days."
+            f"Current value: {perf.get('views')} views, {perf.get('calls')} calls, {perf.get('directions')} directions in "
+            f"{perf.get('window_days', 30)} days."
         )
 
         if amount:
             body += f"\nRenewal amount: {money(amount)}."
 
-        body += "\n\nWant me to help you renew before growth actions pause?"
+        body += "\n\nReply YES and I’ll help renew before growth actions pause."
 
         return {
             "body": body,
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "Renewal reminder tied to actual merchant performance."
+            "rationale": "Renewal reminder tied to actual merchant performance and plan value."
         }
 
     if kind == "research_digest":
@@ -126,63 +147,38 @@ def compose(category, merchant, trigger, customer=None):
         digest = category.get("digest", [])
         item = next((d for d in digest if d.get("id") == top_id), digest[0] if digest else {})
 
-        body = (
-            f"{name}, new {category_slug} insight: {item.get('title', 'a useful category update')}.\n"
-        )
+        body = f"{name}, new {category_slug} insight: {item.get('title', 'a useful category update')}.\n"
 
         if item.get("source"):
             body += f"Source: {item.get('source')}.\n"
 
-        body += "\nWant me to convert this into a customer-friendly WhatsApp message?"
+        body += "\nWant me to turn this into a customer-friendly WhatsApp + GBP post?"
 
         return {
             "body": body,
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "Research trigger grounded in category digest item."
-        }
-
-    if kind in ["regulation_change", "supply_alert"]:
-        if kind == "supply_alert":
-            body = (
-                f"{name}, urgent supply alert.\n\n"
-                f"Molecule: {payload.get('molecule')}\n"
-                f"Affected batches: {', '.join(payload.get('affected_batches', []))}\n\n"
-                "Want me to prepare a customer filter + recall message draft?"
-            )
-        else:
-            body = (
-                f"{name}, compliance update for {category_slug}.\n\n"
-                f"Deadline: {payload.get('deadline_iso')}.\n"
-                "Want me to create a short action checklist?"
-            )
-
-        return {
-            "body": body,
-            "cta": "YES/NO",
-            "send_as": "vera",
-            "suppression_key": suppression_key,
-            "rationale": "High-priority compliance/supply trigger handled with operational next step."
+            "rationale": "Research trigger grounded in category digest item and converted into merchant action."
         }
 
     if kind == "review_theme_emerged":
         body = (
-            f"{name}, review pattern detected: {payload.get('theme')} came up "
+            f"{name}, review pattern detected: “{payload.get('theme')}” came up "
             f"{payload.get('occurrences_30d')} times in 30 days.\n\n"
         )
 
         if payload.get("common_quote"):
             body += f"Customer wording: “{payload.get('common_quote')}”\n\n"
 
-        body += "Want me to draft a reply + one fix message for your team?"
+        body += "Want me to draft: 1) polite public reply, 2) internal fix note, 3) follow-up message?"
 
         return {
             "body": body,
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "Review theme converted into a reputation-management action."
+            "rationale": "Review trend converted into reputation and operations action."
         }
 
     if kind == "competitor_opened":
@@ -191,7 +187,8 @@ def compose(category, merchant, trigger, customer=None):
             f"{payload.get('distance_km')} km away.\n"
             f"Their offer: {payload.get('their_offer')}.\n\n"
             f"Your current offer: {offer or 'no active offer'}.\n"
-            "Want me to draft a stronger counter-offer without sounding cheap?"
+            f"Recommended counter: “{suggested_offer}” with better positioning, not deeper discount.\n\n"
+            "Reply YES and I’ll draft it."
         )
 
         return {
@@ -202,11 +199,34 @@ def compose(category, merchant, trigger, customer=None):
             "rationale": "Competitor trigger uses distance, competitor offer, and merchant offer state."
         }
 
+    if kind in ["regulation_change", "supply_alert"]:
+        if kind == "supply_alert":
+            body = (
+                f"{name}, urgent supply alert.\n\n"
+                f"Molecule: {payload.get('molecule')}\n"
+                f"Affected batches: {', '.join(payload.get('affected_batches', []))}\n\n"
+                "Reply YES and I’ll prepare customer filter + recall message draft."
+            )
+        else:
+            body = (
+                f"{name}, compliance update for {category_slug}.\n\n"
+                f"Deadline: {payload.get('deadline_iso')}.\n"
+                "Reply YES and I’ll create a short action checklist."
+            )
+
+        return {
+            "body": body,
+            "cta": "YES/NO",
+            "send_as": "vera",
+            "suppression_key": suppression_key,
+            "rationale": "High-priority compliance/supply trigger handled with precise next step."
+        }
+
     if kind == "gbp_unverified":
         body = (
             f"{name}, your Google profile is still unverified.\n\n"
             f"Estimated upside after verification: {pct(payload.get('estimated_uplift_pct'))} more trust/actions.\n"
-            "Want me to guide you through postcard/phone verification?"
+            "Reply YES and I’ll guide you through phone/postcard verification."
         )
 
         return {
@@ -214,28 +234,28 @@ def compose(category, merchant, trigger, customer=None):
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "GBP verification trigger with uplift from payload."
+            "rationale": "GBP verification trigger with estimated uplift from payload."
         }
 
     if kind in ["festival_upcoming", "ipl_match_today", "category_seasonal"]:
         if kind == "ipl_match_today":
             body = (
                 f"{name}, {payload.get('match')} is today in {city}.\n\n"
-                "For restaurants, match-night combos usually work better than flat discounts.\n"
-                "Want me to draft a WhatsApp + listing post for tonight?"
+                f"For restaurants, match-night combos work better than flat discounts. Suggested: “{suggested_offer}”.\n"
+                "Reply YES and I’ll draft tonight’s WhatsApp + listing post."
             )
         elif kind == "festival_upcoming":
             body = (
                 f"{name}, {payload.get('festival')} is coming on {payload.get('date')}.\n\n"
-                f"For {category_slug}, a service+price campaign works better than generic discounting.\n"
-                "Want me to draft one campaign?"
+                f"For {category_slug}, service+price campaigns work better than generic discounting. Suggested: “{suggested_offer}”.\n"
+                "Reply YES and I’ll draft one campaign."
             )
         else:
             trends = payload.get("trends", [])
             body = (
-                f"{name}, seasonal demand is shifting.\n\n"
+                f"{name}, seasonal demand is shifting in {city}.\n\n"
                 f"Signals: {', '.join(trends[:3])}.\n"
-                "Want me to turn this into a shelf/campaign action plan?"
+                "Reply YES and I’ll turn this into a shelf/campaign action plan."
             )
 
         return {
@@ -256,10 +276,11 @@ def compose(category, merchant, trigger, customer=None):
 
         body += (
             f"For {topic}, I suggest:\n"
-            "1) one clear package name\n"
-            "2) one starter price\n"
-            "3) one GBP post + one WhatsApp message\n\n"
-            "Want me to draft both now?"
+            "1) clear package name\n"
+            "2) starter price\n"
+            "3) GBP post\n"
+            "4) WhatsApp message\n\n"
+            "Reply YES and I’ll draft both now."
         )
 
         return {
@@ -270,11 +291,11 @@ def compose(category, merchant, trigger, customer=None):
             "rationale": "Intent-handoff handled directly without repetitive qualification."
         }
 
-    if kind in ["milestone_reached", "dormant_with_vera", "winback_eligible", "cde_opportunity", "seasonal_perf_dip"]:
+    if kind in ["milestone_reached", "dormant_with_vera", "winback_eligible", "cde_opportunity"]:
         body = (
-            f"{name}, quick update: {kind.replace('_', ' ')}.\n\n"
-            f"Context: {payload}.\n"
-            "Want me to suggest the best next action?"
+            f"{name}, quick opportunity: {kind.replace('_', ' ')}.\n\n"
+            f"Context: {payload}.\n\n"
+            "Reply YES and I’ll suggest the best next action."
         )
 
         return {
@@ -282,10 +303,10 @@ def compose(category, merchant, trigger, customer=None):
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "Supported lower-frequency merchant trigger handled with contextual fallback."
+            "rationale": "Lower-frequency merchant trigger handled with contextual fallback."
         }
 
-    # ---------------- CUSTOMER-FACING ----------------
+    # ---------- CUSTOMER TRIGGERS ----------
 
     if kind == "recall_due" and customer:
         if not can_message_customer(customer, "recall_reminders"):
@@ -294,12 +315,9 @@ def compose(category, merchant, trigger, customer=None):
         cname = customer.get("identity", {}).get("name", "there")
         service = payload.get("service_due", "follow-up").replace("_", " ")
         slots = payload.get("available_slots", [])
-        slot_text = " / ".join([s.get("label", "") for s in slots[:2]])
+        slot_text = " / ".join([s.get("label", "") for s in slots[:2] if s.get("label")])
 
-        body = (
-            f"Hi {cname}, {name} here 👋\n\n"
-            f"Your {service} is due."
-        )
+        body = f"Hi {cname}, {name} here 👋\n\nYour {service} is due."
 
         if offer:
             body += f"\nCurrent offer: {offer}."
@@ -314,20 +332,18 @@ def compose(category, merchant, trigger, customer=None):
             "cta": "YES/STOP",
             "send_as": "merchant_on_behalf",
             "suppression_key": suppression_key,
-            "rationale": "Customer recall uses consent, service due, slots, and offer."
+            "rationale": "Customer recall uses consent, service due, slots, and merchant offer."
         }
 
     if kind in ["customer_lapsed_hard", "customer_lapsed_soft"] and customer:
-        if not can_message_customer(customer, "winback_offers"):
+        scope = "winback_offers"
+        if not can_message_customer(customer, scope):
             return None
 
         cname = customer.get("identity", {}).get("name", "there")
         days = payload.get("days_since_last_visit")
 
-        body = (
-            f"Hi {cname}, {name} here 👋\n\n"
-            f"It’s been {days} days since your last visit."
-        )
+        body = f"Hi {cname}, {name} here 👋\n\nIt’s been {days} days since your last visit."
 
         if payload.get("previous_focus"):
             body += f"\nWe can help you restart your {payload.get('previous_focus').replace('_', ' ')} plan."
@@ -342,7 +358,7 @@ def compose(category, merchant, trigger, customer=None):
             "cta": "YES/STOP",
             "send_as": "merchant_on_behalf",
             "suppression_key": suppression_key,
-            "rationale": "Customer winback based on lapse state and prior focus."
+            "rationale": "Customer winback based on lapse state, consent, and previous focus."
         }
 
     if kind in ["trial_followup", "wedding_package_followup"] and customer:
@@ -419,3 +435,43 @@ def compose(category, merchant, trigger, customer=None):
         }
 
     return None
+
+
+def respond(message):
+    msg = (message or "").lower().strip()
+
+    if any(x in msg for x in AUTO_REPLY_HINTS):
+        return {
+            "action": "wait",
+            "wait_seconds": 900,
+            "rationale": "Likely WhatsApp Business auto-reply detected; backing off."
+        }
+
+    if any(x in msg for x in ["yes", "haan", "ok", "okay", "sure", "go ahead", "send", "kar do"]):
+        return {
+            "action": "send",
+            "body": "Done 👍 I’ll prepare the draft/action now. You can review before it goes live.",
+            "cta": "none",
+            "rationale": "Merchant/customer accepted the suggested action."
+        }
+
+    if any(x in msg for x in ["no", "not now", "stop", "later", "nahi"]):
+        return {
+            "action": "end",
+            "rationale": "User declined or opted out."
+        }
+
+    if "price" in msg or "cost" in msg or "kitna" in msg:
+        return {
+            "action": "send",
+            "body": "I’ll keep it simple: one clear offer, one price point, and no heavy discounting. Want me to draft 2 options?",
+            "cta": "YES/NO",
+            "rationale": "User asked about price; continue with low-friction option."
+        }
+
+    return {
+        "action": "send",
+        "body": "Got it. I can suggest the best next action based on your listing data. Reply YES and I’ll draft it.",
+        "cta": "YES/NO",
+        "rationale": "Unclear response; nudging toward a simple next step."
+    }
