@@ -1,97 +1,108 @@
 def compose(category, merchant, trigger, customer=None):
-    name = merchant.get("identity", {}).get("name", "there")
-    merchant_id = merchant.get("merchant_id")
+    name = merchant["identity"]["name"]
+    merchant_id = merchant["merchant_id"]
 
-    ctr = merchant.get("performance", {}).get("ctr", 0)
-    impressions = merchant.get("performance", {}).get("impressions", 0)
+    kind = trigger["kind"]
+    payload = trigger.get("payload", {})
+    signals = merchant.get("signals", [])
+    subscription = merchant.get("subscription", {})
 
-    peer_ctr = category.get("peer_stats", {}).get("avg_ctr", 0)
-
-    kind = trigger.get("kind")
-
-    # ---------------- PERFORMANCE DIP ----------------
+    # ---------------- PERF DIP ----------------
     if kind == "perf_dip":
-        if ctr >= peer_ctr * 0.9:
-            return None  # not bad enough → skip
+        delta = payload.get("delta_pct", 0)
 
-        gap = peer_ctr - ctr
+        if delta > -0.2:
+            return None  # ignore small dips
 
-        body = (
-            f"{name}, your listing CTR is {ctr:.2%} vs category avg {peer_ctr:.2%}.\n\n"
-            f"You're missing ~{gap:.2%} potential clicks.\n"
-            "Top fix: add 1 strong offer + better cover image.\n\n"
-            "Reply YES and I’ll create a high-converting offer for you."
-        )
+        problem = []
+        if "no_active_offers" in signals:
+            problem.append("no active offers")
+        if "unverified_gbp" in signals:
+            problem.append("profile not verified")
+
+        problem_text = ", ".join(problem) if problem else "low engagement"
 
         return {
-            "body": body,
+            "body": (
+                f"{name}, your performance dropped {abs(delta)*100:.0f}% in last 7 days.\n\n"
+                f"Main issue: {problem_text}.\n\n"
+                "Reply YES and I’ll fix this in 10 seconds."
+            ),
             "cta": "YES/NO",
             "send_as": "vera",
-            "suppression_key": f"{merchant_id}_perf_dip",
-            "rationale": "CTR significantly below category benchmark"
+            "suppression_key": trigger["suppression_key"],
+            "rationale": "Significant performance drop with identifiable issues"
         }
 
-    # ---------------- RESEARCH DIGEST ----------------
-    if kind == "research_digest":
-        digest = category.get("digest", [])
-
-        if not digest:
-            return None
-
-        insight = digest[0]
-
-        body = (
-            f"{name}, new trend in your category:\n"
-            f"{insight.get('title', 'Customers prefer bundled offers')}.\n\n"
-            "Shops using this saw higher conversions.\n"
-            "Want me to create a campaign using this?"
-        )
+    # ---------------- RENEWAL ----------------
+    if kind == "renewal_due":
+        days = payload.get("days_remaining", 0)
 
         return {
-            "body": body,
+            "body": (
+                f"{name}, your Pro plan expires in {days} days.\n\n"
+                "After expiry, visibility drops sharply.\n\n"
+                "Reply YES to renew instantly."
+            ),
+            "cta": "YES/NO",
+            "send_as": "vera",
+            "suppression_key": trigger["suppression_key"],
+            "rationale": "Subscription expiring soon"
+        }
+
+    # ---------------- REVIEW ISSUE ----------------
+    if kind == "review_theme_emerged":
+        theme = payload.get("theme")
+        quote = payload.get("common_quote", "")
+
+        return {
+            "body": (
+                f"{name}, customers are mentioning '{theme}' more often.\n\n"
+                f"Example: \"{quote}\"\n\n"
+                "Fixing this can improve ratings quickly. Want help?"
+            ),
             "cta": "open_ended",
             "send_as": "vera",
-            "suppression_key": f"{merchant_id}_research",
-            "rationale": "Category trend can improve conversions"
+            "suppression_key": trigger["suppression_key"],
+            "rationale": "Negative review trend detected"
         }
 
     # ---------------- CUSTOMER RECALL ----------------
     if kind == "recall_due" and customer:
-        cname = customer.get("identity", {}).get("name", "Customer")
-        shop = merchant.get("identity", {}).get("name", "Store")
+        cname = customer["identity"]["name"]
+        service = payload.get("service_due")
 
-        last_seen = customer.get("last_seen_days", 30)
-
-        if last_seen < 15:
-            return None  # too soon → skip
-
-        offer = merchant.get("offers", [{}])[0].get("title", "Special offer")
-
-        body = (
-            f"Hi {cname}, {shop} here 👋\n\n"
-            f"We haven’t seen you in {last_seen} days.\n"
-            f"{offer} is waiting for you.\n\n"
-            "Reply YES to book now."
-        )
+        if not customer["preferences"].get("reminder_opt_in"):
+            return None  # respect consent
 
         return {
-            "body": body,
+            "body": (
+                f"Hi {cname}, it's time for your {service} 👋\n\n"
+                "We have slots this week.\n"
+                "Reply YES to book instantly."
+            ),
             "cta": "YES/STOP",
             "send_as": "merchant_on_behalf",
-            "suppression_key": f"{cname}_recall",
-            "rationale": "Customer inactive → recall opportunity"
+            "suppression_key": trigger["suppression_key"],
+            "rationale": "Service recall due"
+        }
+
+    # ---------------- COMPETITOR ----------------
+    if kind == "competitor_opened":
+        comp = payload.get("competitor_name")
+        offer = payload.get("their_offer")
+
+        return {
+            "body": (
+                f"{name}, a new competitor ({comp}) opened nearby.\n"
+                f"They are offering: {offer}\n\n"
+                "Want me to create a stronger counter-offer?"
+            ),
+            "cta": "open_ended",
+            "send_as": "vera",
+            "suppression_key": trigger["suppression_key"],
+            "rationale": "Competitive threat detected"
         }
 
     # ---------------- FALLBACK ----------------
-    body = (
-        f"{name}, I can help improve your visibility and conversions.\n"
-        "Want quick suggestions?"
-    )
-
-    return {
-        "body": body,
-        "cta": "open_ended",
-        "send_as": "vera",
-        "suppression_key": f"{merchant_id}_general",
-        "rationale": "General engagement"
-    }
+    return None
