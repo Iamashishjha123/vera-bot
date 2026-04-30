@@ -99,3 +99,71 @@ def reply(data: dict):
         "cta": "open_ended",
         "rationale": "Continue engagement"
     }
+
+from fastapi.responses import HTMLResponse
+
+# ---------------- SIMPLE CHAT API ----------------
+@app.post("/chat")
+def chat(data: dict):
+    user_message = data.get("message", "").lower()
+
+    if "perf" in user_message or "ctr" in user_message:
+        return {
+            "reply": "Your CTR looks low. I suggest creating one service+price offer and one fresh post. Reply YES and I’ll draft it."
+        }
+
+    if "review" in user_message:
+        return {
+            "reply": "I can help identify review patterns and draft polite replies for customers."
+        }
+
+    if "offer" in user_message:
+        return {
+            "reply": "Best offers are specific, not generic discounts. Example: Haircut @ ₹99 or Dental Cleaning @ ₹299."
+        }
+
+    if "customer" in user_message:
+        return {
+            "reply": "I can create customer recall, refill, appointment, or winback messages based on consent."
+        }
+
+    return {
+        "reply": "Hi, I’m your Merchant Growth Assistant. Ask me about CTR, reviews, offers, customers, or campaigns."
+    }
+
+
+# ---------------- SIMPLE CHAT UI ----------------
+@app.get("/chat-ui", response_class=HTMLResponse)
+def chat_ui():
+    return """
+    <html>
+    <head>
+        <title>Merchant Growth Assistant</title>
+    </head>
+    <body style="font-family: Arial; max-width: 700px; margin: 40px auto;">
+        <h2>Merchant Growth Assistant</h2>
+
+        <input id="msg" style="width:80%; padding:10px;" 
+        placeholder="Ask about CTR, offers, reviews..." />
+
+        <button onclick="sendMsg()" style="padding:10px;">Send</button>
+
+        <div id="reply" style="margin-top:20px; white-space:pre-wrap;"></div>
+
+        <script>
+        async function sendMsg() {
+            const msg = document.getElementById("msg").value;
+
+            const res = await fetch("/chat", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({message: msg})
+            });
+
+            const data = await res.json();
+            document.getElementById("reply").innerText = data.reply;
+        }
+        </script>
+    </body>
+    </html>
+    """
