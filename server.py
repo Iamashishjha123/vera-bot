@@ -62,8 +62,10 @@ def tick(data: dict):
             continue
 
         # Keep WhatsApp-style messages concise for judge constraints
-        if len(result.get("body", "")) > 320:
-        result["body"] = result["body"][:317] + "..."
+        body_text = result.get("body", "")
+
+        if len(body_text) > 320:
+            result["body"] = body_text[:317] + "..."
 
         actions.append({
             "conversation_id": trig_id,
