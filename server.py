@@ -3,6 +3,10 @@ from bot import compose
 
 app = FastAPI()
 
+@app.get("/")
+def root():
+    return {"message": "Vera bot is running"}
+
 store = {
     "category": {},
     "merchant": {},
