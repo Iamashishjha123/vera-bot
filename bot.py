@@ -1,329 +1,160 @@
-AUTO_REPLY_HINTS = [
-    "thank you for contacting", "we will get back", "business account",
-    "auto reply", "automated", "thanks for contacting"
-]
+from typing import Optional
+
+# ---------- HELPERS ----------
+
+def get_name(merchant):
+    return merchant.get("identity", {}).get("name", "there")
 
 
-def pct(x):
-    try:
-        return f"{x * 100:.0f}%"
-    except Exception:
-        return "N/A"
+def get_lang(merchant):
+    langs = merchant.get("identity", {}).get("languages", [])
+    return langs[0] if langs else "en"
 
 
-def money(x):
-    try:
-        return f"₹{int(x):,}"
-    except Exception:
-        return str(x)
+def get_offer(category, merchant):
+    offers = merchant.get("offers", [])
+    if offers:
+        return offers[0].get("title") or offers[0].get("name")
+
+    catalog = category.get("offer_catalog", [])
+    return catalog[0] if catalog else None
 
 
-def active_offer(merchant):
-    for offer in merchant.get("offers", []):
-        if offer.get("status") == "active":
-            return offer.get("title")
-    return None
+def can_message_customer(customer, purpose):
+    consent = customer.get("consent", {})
+    return purpose in consent.get("scope", [])
 
 
-def can_message_customer(customer, scope):
-    if not customer:
-        return False
+# ---------- MAIN COMPOSE ----------
 
-    prefs = customer.get("preferences", {})
-    scopes = customer.get("consent", {}).get("scope", [])
-
-    if prefs.get("reminder_opt_in") is False:
-        return False
-
-    return scope in scopes
-
-
-def category_fix(category_slug, merchant):
-    offer = active_offer(merchant)
-
-    if category_slug == "dentists":
-        return offer or "Dental Cleaning @ ₹299"
-    if category_slug == "salons":
-        return offer or "Haircut @ ₹99"
-    if category_slug == "restaurants":
-        return offer or "Meal combo / thali offer"
-    if category_slug == "gyms":
-        return offer or "3 FREE Trial Classes"
-    if category_slug == "pharmacies":
-        return offer or "Free Home Delivery > ₹499"
-
-    return offer or "service+price offer"
-
-
-def compose(category, merchant, trigger, customer=None):
-    identity = merchant.get("identity", {})
-    name = identity.get("name", "there")
-    city = identity.get("city", "")
-    locality = identity.get("locality", "")
-    category_slug = merchant.get("category_slug", category.get("slug", "business"))
-
-    kind = trigger.get("kind", "")
+def compose(category: dict, merchant: dict, trigger: dict, customer: Optional[dict] = None) -> dict:
+    kind = trigger.get("kind")
     payload = trigger.get("payload", {})
-    suppression_key = trigger.get("suppression_key", f"{kind}:{merchant.get('merchant_id')}")
+    suppression_key = trigger.get("suppression_key")
+
+    name = get_name(merchant)
+    lang = get_lang(merchant)
+    offer = get_offer(category, merchant)
 
     perf = merchant.get("performance", {})
     signals = merchant.get("signals", [])
-    subscription = merchant.get("subscription", {})
-    offer = active_offer(merchant)
-    suggested_offer = category_fix(category_slug, merchant)
 
-    # ---------- MERCHANT TRIGGERS ----------
+    # ---------- 1. PERFORMANCE DIP ----------
+    if kind == "perf_dip":
+        metric = payload.get("metric", "calls")
+        delta = payload.get("delta_pct", -0.3)
+        window = payload.get("window", "7d")
 
-    if kind in ["perf_dip", "seasonal_perf_dip"]:
-        metric = payload.get("metric", "performance")
-        delta = payload.get("delta_pct")
-        window = payload.get("window", "recently")
+        views = perf.get("views", 0)
+        calls = perf.get("calls", 0)
+        ctr = perf.get("ctr", 0)
 
-        blockers = []
+        body = f"{name}, your {metric} dropped {abs(int(delta*100))}% in the last {window}.\n"
+        body += f"Current: {views} views → {calls} calls (CTR {int(ctr*100)}%)."
+
         if "no_active_offers" in signals:
-            blockers.append("no active offer")
+            body += "\nIssue: no active offer."
+
         if "unverified_gbp" in signals:
-            blockers.append("GBP not verified")
-        if any("dormant_with_vera" in s for s in signals):
-            blockers.append("no recent Vera action")
+            body += "\nAlso, profile is unverified."
 
-        body = (
-            f"{name}, {metric} is down {pct(abs(delta)) if delta else 'recently'} over {window}.\n\n"
-            f"Snapshot: {perf.get('views')} views, {perf.get('calls')} calls, CTR {pct(perf.get('ctr'))}.\n"
-            f"Likely blocker: {', '.join(blockers) if blockers else 'conversion weakness'}.\n\n"
-            f"Best fix: push “{suggested_offer}” + one fresh post for {locality}. "
-            f"Reply YES — I’ll draft it now."
-        )
+        if offer:
+            body += f"\n\nQuick fix: launch '{offer}' + 1 fresh post."
+
+        body += "\nReply YES — I’ll draft it for you."
 
         return {
             "body": body,
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "Performance dip handled using metric drop, merchant performance, signals, and category-correct offer."
+            "rationale": "Performance dip using real metrics, signals, and actionable fix."
         }
 
-    if kind == "perf_spike":
-        body = (
-            f"{name}, good momentum — {payload.get('metric', 'calls')} is up {pct(payload.get('delta_pct'))}.\n"
-            f"Likely driver: {payload.get('likely_driver', 'recent activity')}.\n\n"
-            f"Let’s capture this while demand is warm. Want me to create a post + WhatsApp campaign around “{suggested_offer}”?"
-        )
+    # ---------- 2. RESEARCH DIGEST ----------
+    if kind in ["research_digest", "research_digest_release"]:
+        top_item = payload.get("top_item", {})
+
+        title = top_item.get("title", "a useful update")
+        source = top_item.get("source")
+        trial_n = top_item.get("trial_n")
+        segment = top_item.get("patient_segment")
+
+        body = f"{name}, {title}."
+
+        if trial_n:
+            body += f" ({trial_n:,} cases)"
+
+        if segment:
+            body += f"\nRelevant for your {segment.replace('_',' ')} patients."
+
+        if source:
+            body += f"\n— {source}"
+
+        body += "\n\nWant me to draft a patient WhatsApp for this?"
 
         return {
             "body": body,
-            "cta": "YES/NO",
+            "cta": "open_ended",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "Performance spike converted into a momentum-capture action."
+            "rationale": "Research-based curiosity + value."
         }
 
-    if kind == "renewal_due":
-        days = payload.get("days_remaining", subscription.get("days_remaining"))
-        amount = payload.get("renewal_amount")
-        plan = payload.get("plan", subscription.get("plan", "plan"))
-
-        body = (
-            f"{name}, your {plan} plan expires in {days} days.\n\n"
-            f"Current value: {perf.get('views')} views, {perf.get('calls')} calls, {perf.get('directions')} directions in "
-            f"{perf.get('window_days', 30)} days."
-        )
-
-        if amount:
-            body += f"\nRenewal amount: {money(amount)}."
-
-        body += "\n\nReply YES and I’ll help renew before growth actions pause."
-
-        return {
-            "body": body,
-            "cta": "YES/NO",
-            "send_as": "vera",
-            "suppression_key": suppression_key,
-            "rationale": "Renewal reminder tied to actual merchant performance and plan value."
-        }
-
-    if kind == "research_digest":
-        top_id = payload.get("top_item_id")
-        digest = category.get("digest", [])
-        item = next((d for d in digest if d.get("id") == top_id), digest[0] if digest else {})
-
-        body = f"{name}, new {category_slug} insight: {item.get('title', 'a useful category update')}.\n"
-
-        if item.get("source"):
-            body += f"Source: {item.get('source')}.\n"
-
-        body += "\nWant me to turn this into a customer-friendly WhatsApp + GBP post?"
-
-        return {
-            "body": body,
-            "cta": "YES/NO",
-            "send_as": "vera",
-            "suppression_key": suppression_key,
-            "rationale": "Research trigger grounded in category digest item and converted into merchant action."
-        }
-
-    if kind == "review_theme_emerged":
-        body = (
-            f"{name}, review pattern detected: “{payload.get('theme')}” came up "
-            f"{payload.get('occurrences_30d')} times in 30 days.\n\n"
-        )
-
-        if payload.get("common_quote"):
-            body += f"Customer wording: “{payload.get('common_quote')}”\n\n"
-
-        body += "Want me to draft: 1) polite public reply, 2) internal fix note, 3) follow-up message?"
-
-        return {
-            "body": body,
-            "cta": "YES/NO",
-            "send_as": "vera",
-            "suppression_key": suppression_key,
-            "rationale": "Review trend converted into reputation and operations action."
-        }
-
+    # ---------- 3. COMPETITOR ----------
     if kind == "competitor_opened":
-        body = (
-            f"{name}, competitor alert — {payload.get('competitor_name')} opened "
-            f"{payload.get('distance_km')} km away.\n"
-            f"Their offer: {payload.get('their_offer')}.\n\n"
-            f"Your current offer: {offer or 'no active offer'}.\n"
-            f"Recommended counter: “{suggested_offer}” with better positioning, not deeper discount.\n\n"
-            "Reply YES and I’ll draft it."
-        )
+        comp = payload.get("competitor_name", "a new competitor")
+        dist = payload.get("distance_km", "")
+        their_offer = payload.get("their_offer", "")
+
+        body = f"{name}, {comp} just opened {dist} km away."
+
+        if their_offer:
+            body += f"\nThey’re running '{their_offer}'."
+
+        if offer:
+            body += f"\n\nWe can counter with '{offer}' + visibility push."
+
+        body += "\nWant me to draft your counter strategy?"
 
         return {
             "body": body,
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "Competitor trigger uses distance, competitor offer, and merchant offer state."
+            "rationale": "Competition-based urgency + action."
         }
 
-    if kind in ["regulation_change", "supply_alert"]:
-        if kind == "supply_alert":
-            body = (
-                f"{name}, urgent supply alert.\n\n"
-                f"Molecule: {payload.get('molecule')}\n"
-                f"Affected batches: {', '.join(payload.get('affected_batches', []))}\n\n"
-                "Reply YES and I’ll prepare customer filter + recall message draft."
-            )
-        else:
-            body = (
-                f"{name}, compliance update for {category_slug}.\n\n"
-                f"Deadline: {payload.get('deadline_iso')}.\n"
-                "Reply YES and I’ll create a short action checklist."
-            )
-
-        return {
-            "body": body,
-            "cta": "YES/NO",
-            "send_as": "vera",
-            "suppression_key": suppression_key,
-            "rationale": "High-priority compliance/supply trigger handled with precise next step."
-        }
-
-    if kind == "gbp_unverified":
-        body = (
-            f"{name}, your Google profile is still unverified.\n\n"
-            f"Estimated upside after verification: {pct(payload.get('estimated_uplift_pct'))} more trust/actions.\n"
-            "Reply YES and I’ll guide you through phone/postcard verification."
-        )
-
-        return {
-            "body": body,
-            "cta": "YES/NO",
-            "send_as": "vera",
-            "suppression_key": suppression_key,
-            "rationale": "GBP verification trigger with estimated uplift from payload."
-        }
-
-    if kind in ["festival_upcoming", "ipl_match_today", "category_seasonal"]:
-        if kind == "ipl_match_today":
-            body = (
-                f"{name}, {payload.get('match')} is today in {city}.\n\n"
-                f"For restaurants, match-night combos work better than flat discounts. Suggested: “{suggested_offer}”.\n"
-                "Reply YES and I’ll draft tonight’s WhatsApp + listing post."
-            )
-        elif kind == "festival_upcoming":
-            body = (
-                f"{name}, {payload.get('festival')} is coming on {payload.get('date')}.\n\n"
-                f"For {category_slug}, service+price campaigns work better than generic discounting. Suggested: “{suggested_offer}”.\n"
-                "Reply YES and I’ll draft one campaign."
-            )
-        else:
-            trends = payload.get("trends", [])
-            body = (
-                f"{name}, seasonal demand is shifting in {city}.\n\n"
-                f"Signals: {', '.join(trends[:3])}.\n"
-                "Reply YES and I’ll turn this into a shelf/campaign action plan."
-            )
-
-        return {
-            "body": body,
-            "cta": "YES/NO",
-            "send_as": "vera",
-            "suppression_key": suppression_key,
-            "rationale": "External event/seasonality converted into timely merchant action."
-        }
-
-    if kind in ["active_planning_intent", "curious_ask_due"]:
-        topic = payload.get("intent_topic", payload.get("ask_template", "growth idea"))
-        last_msg = payload.get("merchant_last_message", "")
-
-        body = f"{name}, "
-        if last_msg:
-            body += f"continuing from your message: “{last_msg}”\n\n"
-
-        body += (
-            f"For {topic}, I suggest:\n"
-            "1) clear package name\n"
-            "2) starter price\n"
-            "3) GBP post\n"
-            "4) WhatsApp message\n\n"
-            "Reply YES and I’ll draft both now."
-        )
-
-        return {
-            "body": body,
-            "cta": "YES/NO",
-            "send_as": "vera",
-            "suppression_key": suppression_key,
-            "rationale": "Intent-handoff handled directly without repetitive qualification."
-        }
-
-    if kind in ["milestone_reached", "dormant_with_vera", "winback_eligible", "cde_opportunity"]:
-        body = (
-            f"{name}, quick opportunity: {kind.replace('_', ' ')}.\n\n"
-            f"Context: {payload}.\n\n"
-            "Reply YES and I’ll suggest the best next action."
-        )
-
-        return {
-            "body": body,
-            "cta": "YES/NO",
-            "send_as": "vera",
-            "suppression_key": suppression_key,
-            "rationale": "Lower-frequency merchant trigger handled with contextual fallback."
-        }
-
-    # ---------- CUSTOMER TRIGGERS ----------
-
+    # ---------- 4. CUSTOMER RECALL ----------
     if kind == "recall_due" and customer:
         if not can_message_customer(customer, "recall_reminders"):
             return None
 
         cname = customer.get("identity", {}).get("name", "there")
-        service = payload.get("service_due", "follow-up").replace("_", " ")
+        lang = customer.get("identity", {}).get("language_pref", "")
+        relationship = customer.get("relationship", {})
+
+        last_visit = relationship.get("last_visit")
+        service = payload.get("service_due", "follow-up")
         slots = payload.get("available_slots", [])
+
         slot_text = " / ".join([s.get("label", "") for s in slots[:2] if s.get("label")])
 
-        body = f"Hi {cname}, {name} here 👋\n\nYour {service} is due."
+        body = f"Hi {cname}, {name} here 👋\n\n"
 
-        if offer:
-            body += f"\nCurrent offer: {offer}."
+        if last_visit:
+            body += f"It’s been a while since your last visit ({last_visit}). "
+
+        body += f"Your {service} is due."
 
         if slot_text:
-            body += f"\nAvailable slots: {slot_text}."
+            if "hi" in lang:
+                body += f"\nApke liye slots ready hain: {slot_text}."
+            else:
+                body += f"\nAvailable slots: {slot_text}."
+
+        if offer:
+            body += f"\nOffer: {offer}."
 
         body += "\n\nReply YES to book or STOP to opt out."
 
@@ -332,218 +163,61 @@ def compose(category, merchant, trigger, customer=None):
             "cta": "YES/STOP",
             "send_as": "merchant_on_behalf",
             "suppression_key": suppression_key,
-            "rationale": "Customer recall uses consent, service due, slots, and merchant offer."
+            "rationale": "Customer recall using consent, slots, and personalization."
         }
 
-    if kind in ["customer_lapsed_hard", "customer_lapsed_soft"] and customer:
-        scope = "winback_offers"
-        if not can_message_customer(customer, scope):
-            return None
-
-        cname = customer.get("identity", {}).get("name", "there")
-        days = payload.get("days_since_last_visit")
-
-        body = f"Hi {cname}, {name} here 👋\n\nIt’s been {days} days since your last visit."
-
-        if payload.get("previous_focus"):
-            body += f"\nWe can help you restart your {payload.get('previous_focus').replace('_', ' ')} plan."
-
-        if offer:
-            body += f"\nOffer available: {offer}."
-
-        body += "\n\nReply YES to pick a slot or STOP to opt out."
-
-        return {
-            "body": body,
-            "cta": "YES/STOP",
-            "send_as": "merchant_on_behalf",
-            "suppression_key": suppression_key,
-            "rationale": "Customer winback based on lapse state, consent, and previous focus."
-        }
-
-    if kind in ["trial_followup", "wedding_package_followup"] and customer:
-        cname = customer.get("identity", {}).get("name", "there")
-
-        if kind == "trial_followup":
-            if not can_message_customer(customer, "kids_program_updates"):
-                return None
-            slot = payload.get("next_session_options", [{}])[0].get("label", "this week")
-            body = (
-                f"Hi {cname}, {name} here 👋\n\n"
-                f"Hope the trial went well. Next available session: {slot}.\n"
-                "Reply YES to confirm or STOP to opt out."
-            )
-        else:
-            if not can_message_customer(customer, "bridal_package_followup"):
-                return None
-            body = (
-                f"Hi {cname}, {name} here 👋\n\n"
-                f"Your wedding is on {payload.get('wedding_date')}. "
-                f"This is a good time to start the {payload.get('next_step_window_open')}.\n"
-                "Reply YES and we’ll share package options. STOP to opt out."
-            )
-
-        return {
-            "body": body,
-            "cta": "YES/STOP",
-            "send_as": "merchant_on_behalf",
-            "suppression_key": suppression_key,
-            "rationale": "Customer follow-up based on specific journey stage and consent."
-        }
-
-    if kind == "chronic_refill_due" and customer:
-        if not can_message_customer(customer, "refill_reminders"):
-            return None
-
-        cname = customer.get("identity", {}).get("name", "there")
-        meds = ", ".join(payload.get("molecule_list", []))
-
-        body = (
-            f"Hi {cname}, {name} here.\n\n"
-            f"Your refill may be due for: {meds}.\n"
-            f"Stock may run out around: {payload.get('stock_runs_out_iso')}."
-        )
-
-        if payload.get("delivery_address_saved"):
-            body += "\nYour delivery address is saved."
-
-        body += "\n\nReply YES for refill support or STOP to opt out."
-
-        return {
-            "body": body,
-            "cta": "YES/STOP",
-            "send_as": "merchant_on_behalf",
-            "suppression_key": suppression_key,
-            "rationale": "Chronic refill reminder respects consent and uses refill payload."
-        }
-
-    if kind == "appointment_tomorrow" and customer:
-        if not can_message_customer(customer, "appointment_reminders"):
-            return None
-
-        cname = customer.get("identity", {}).get("name", "there")
-
-        return {
-            "body": (
-                f"Hi {cname}, reminder from {name} 👋\n\n"
-                "Your appointment is tomorrow. Reply YES to confirm or STOP to opt out."
-            ),
-            "cta": "YES/STOP",
-            "send_as": "merchant_on_behalf",
-            "suppression_key": suppression_key,
-            "rationale": "Appointment reminder sent only with appointment-reminder consent."
-        }
-
-    return None
-
-
-def respond(message):
-    msg = (message or "").lower().strip()
-
-    if any(x in msg for x in AUTO_REPLY_HINTS):
-        return {
-            "action": "wait",
-            "wait_seconds": 900,
-            "rationale": "Likely WhatsApp Business auto-reply detected; backing off."
-        }
-
-    if any(x in msg for x in ["yes", "haan", "ok", "okay", "sure", "go ahead", "send", "kar do"]):
-        return {
-            "action": "send",
-            "body": "Done 👍 I’ll prepare the draft/action now. You can review before it goes live.",
-            "cta": "none",
-            "rationale": "Merchant/customer accepted the suggested action."
-        }
-
-    if any(x in msg for x in ["no", "not now", "stop", "later", "nahi"]):
-        return {
-            "action": "end",
-            "rationale": "User declined or opted out."
-        }
-
-    if "price" in msg or "cost" in msg or "kitna" in msg:
-        return {
-            "action": "send",
-            "body": "I’ll keep it simple: one clear offer, one price point, and no heavy discounting. Want me to draft 2 options?",
-            "cta": "YES/NO",
-            "rationale": "User asked about price; continue with low-friction option."
-        }
-
+    # ---------- DEFAULT ----------
     return {
-        "action": "send",
-        "body": "Got it. I can suggest the best next action based on your listing data. Reply YES and I’ll draft it.",
+        "body": f"{name}, I found a quick growth opportunity for you. Want me to show it?",
         "cta": "YES/NO",
-        "rationale": "Unclear response; nudging toward a simple next step."
+        "send_as": "vera",
+        "suppression_key": suppression_key,
+        "rationale": "Fallback message."
     }
+
+
+# ---------- REPLY HANDLER ----------
 
 AUTO_REPLY_HINTS = [
     "thank you for contacting",
-    "we will get back",
     "automated assistant",
-    "auto reply",
-    "thanks for contacting",
     "team tak",
-    "hamari team",
-    "main ek automated assistant"
+    "auto reply"
 ]
 
 
 def respond(state, merchant_message: str) -> dict:
-    msg = (merchant_message or "").lower().strip()
-    turns = state.get("turns", [])
-
-    merchant_texts = [
-        t.get("body", "").lower().strip()
-        for t in turns
-        if t.get("from") in ["merchant", "customer"]
-    ]
-
-    if len(merchant_texts) >= 2 and merchant_texts[-1] == merchant_texts[-2]:
-        return {
-            "action": "end",
-            "rationale": "Repeated identical merchant reply detected; likely WhatsApp Business auto-reply. Exiting gracefully."
-        }
+    msg = merchant_message.lower().strip()
 
     if any(x in msg for x in AUTO_REPLY_HINTS):
         return {
             "action": "wait",
             "wait_seconds": 900,
-            "rationale": "Likely WhatsApp Business auto-reply detected; backing off instead of wasting turns."
+            "rationale": "Auto-reply detected"
         }
 
-    if any(x in msg for x in ["yes", "haan", "ok", "okay", "sure", "go ahead", "kar do", "send", "do it", "let's do it"]):
+    if "yes" in msg or "haan" in msg:
         return {
             "action": "send",
-            "body": "Done 👍 I’ll prepare the draft/action now. You can review before it goes live.",
-            "cta": "none",
-            "rationale": "User accepted; switching from pitch mode to action mode immediately."
+            "body": "Done 👍 I’ll set this up for you.",
+            "rationale": "User accepted"
         }
 
-    if any(x in msg for x in ["join", "judna", "register", "start", "onboard", "magicpin judna"]):
+    if "join" in msg or "judna" in msg:
         return {
             "action": "send",
-            "body": "Great — I’ll start onboarding directly. Please share business name, city, and phone number to continue.",
-            "cta": "open_ended",
-            "rationale": "Detected join/onboarding intent; routed directly to action instead of more qualification."
+            "body": "Great — I’ll onboard you. Share business name, city & phone.",
+            "rationale": "Intent detected"
         }
 
-    if any(x in msg for x in ["no", "not now", "stop", "later", "nahi", "not interested"]):
+    if "no" in msg or "stop" in msg:
         return {
             "action": "end",
-            "rationale": "User declined or opted out; graceful exit."
-        }
-
-    if any(x in msg for x in ["gst", "tax", "loan", "website", "instagram"]):
-        return {
-            "action": "send",
-            "body": "I can help with growth actions on your listing first — offers, posts, reviews, customer reminders. Want me to draft the next best one?",
-            "cta": "YES/NO",
-            "rationale": "Off-topic reply handled politely while staying on Vera’s merchant-growth mission."
+            "rationale": "User declined"
         }
 
     return {
         "action": "send",
-        "body": "Got it. I’ll keep it simple: one clear next action, no extra steps. Reply YES and I’ll draft it.",
-        "cta": "YES/NO",
-        "rationale": "Unclear reply; nudging toward a single low-friction next step."
+        "body": "Got it. Reply YES and I’ll take care of it.",
+        "rationale": "Fallback"
     }
