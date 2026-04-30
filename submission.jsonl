@@ -1,0 +1,59 @@
+{"test_id":"T01","body":"Dr. Meera, your calls dropped 50% in the last 7d.\nCurrent: 1200 views → 6 calls (CTR 2%).\nIssue: no active offer.\n\nQuick fix: launch 'Dental Cleaning @ ₹299' + 1 post.\nReply YES — I’ll draft it.","cta":"YES/NO","send_as":"vera","suppression_key":"perf:m001","rationale":"Uses real numbers, identifies issue, gives specific solution."}
+
+{"test_id":"T02","body":"Studio11, 3 salons in your area launched 'Haircut @ ₹99' this week.\n\nYou’re currently not running any active offer.\n\nWe can counter with a stronger visibility push. Want me to draft it?","cta":"YES/NO","send_as":"vera","suppression_key":"comp:m002","rationale":"Competition + social proof + action."}
+
+{"test_id":"T03","body":"Pizza Junction, your weekend views spiked 28% yesterday.\n\nThis is the best time to convert traffic into orders.\n\nWant me to create a limited-time combo offer for you?","cta":"YES/NO","send_as":"vera","suppression_key":"spike:m003","rationale":"Uses trigger timing + opportunity framing."}
+
+{"test_id":"T04","body":"Dr. Meera, JIDA Oct issue shows 3-month fluoride recall reduces recurrence by 38%.\n\nRelevant for your high-risk adult patients.\n\nWant me to draft a patient message for this?","cta":"open_ended","send_as":"vera","suppression_key":"digest:m001","rationale":"Clinical insight + curiosity."}
+
+{"test_id":"T05","body":"Hi Priya, Dr. Meera’s clinic here 🦷\n\nIt’s been 5 months since your last visit — your cleaning is due.\nSlots available: Wed 6pm / Thu 5pm.\n₹299 cleaning.\n\nReply YES to book or STOP to opt out.","cta":"YES/STOP","send_as":"merchant_on_behalf","suppression_key":"recall:c001","rationale":"Customer recall with slots + offer + consent."}
+
+{"test_id":"T06","body":"GymFit, your engagement dropped this week.\n\nMembers respond best to short-term challenges.\n\nWant me to set up a 7-day fitness challenge for you?","cta":"YES/NO","send_as":"vera","suppression_key":"eng:m004","rationale":"Category-specific engagement."}
+
+{"test_id":"T07","body":"Dr. Meera, 78 patients haven’t visited in 6+ months.\n\nThat’s potential revenue sitting idle.\n\nWant me to send them a recall message?","cta":"YES/NO","send_as":"vera","suppression_key":"lapse:m001","rationale":"Loss aversion + clear action."}
+
+{"test_id":"T08","body":"SalonGlow, festive season is coming.\n\nMost salons see peak demand during weddings.\n\nWant me to create a bridal package offer?","cta":"YES/NO","send_as":"vera","suppression_key":"festival:m005","rationale":"Seasonal trigger + category insight."}
+
+{"test_id":"T09","body":"PharmaCare, medicine searches in your area are up 22% this week.\n\nYou’re missing visibility on top queries.\n\nWant me to optimize your listing?","cta":"YES/NO","send_as":"vera","suppression_key":"trend:m006","rationale":"Trend + missed opportunity."}
+
+{"test_id":"T10","body":"Dr. Meera, 3 recent reviews mention 'long wait time'.\n\nThis can impact your rating.\n\nWant me to draft a response for these reviews?","cta":"YES/NO","send_as":"vera","suppression_key":"review:m001","rationale":"Review pattern + fix."}
+
+{"test_id":"T11","body":"Pizza Junction, you crossed 100 reviews 🎉\n\nHigh-rated listings get more clicks.\n\nWant to highlight this on your profile?","cta":"YES/NO","send_as":"vera","suppression_key":"milestone:m003","rationale":"Milestone + growth opportunity."}
+
+{"test_id":"T12","body":"Dr. Meera, your profile is only 65% complete.\n\nMissing details reduce visibility.\n\nWant me to fix it in 2 minutes?","cta":"YES/NO","send_as":"vera","suppression_key":"profile:m001","rationale":"Specific gap + quick solution."}
+
+{"test_id":"T13","body":"GymFit, weekday evening slots are filling fastest.\n\nYou can use this to upsell premium batches.\n\nWant me to set it up?","cta":"YES/NO","send_as":"vera","suppression_key":"slot:m004","rationale":"Insight from behavior."}
+
+{"test_id":"T14","body":"SalonGlow, your last post was 22 days ago.\n\nFresh posts increase profile reach.\n\nWant me to create a new one?","cta":"YES/NO","send_as":"vera","suppression_key":"post:m005","rationale":"Signal-based nudge."}
+
+{"test_id":"T15","body":"Dr. Meera, 60% of your patients prefer evening slots.\n\nWe can optimize scheduling accordingly.\n\nWant me to suggest changes?","cta":"YES/NO","send_as":"vera","suppression_key":"schedule:m001","rationale":"Customer preference insight."}
+
+{"test_id":"T16","body":"Pizza Junction, combo meals perform 30% better than single items.\n\nYou’re not running any combos currently.\n\nWant me to create one?","cta":"YES/NO","send_as":"vera","suppression_key":"combo:m003","rationale":"Category performance insight."}
+
+{"test_id":"T17","body":"Dr. Meera, your CTR is 2.1% vs peer avg 3.0%.\n\nYou’re missing clicks.\n\nWant me to fix this gap?","cta":"YES/NO","send_as":"vera","suppression_key":"ctr:m001","rationale":"Peer comparison + loss framing."}
+
+{"test_id":"T18","body":"SalonGlow, 3 nearby salons increased visibility using posts this week.\n\nYou’re currently inactive.\n\nWant me to create one for you?","cta":"YES/NO","send_as":"vera","suppression_key":"peer:m005","rationale":"Social proof + action."}
+
+{"test_id":"T19","body":"PharmaCare, customers are searching for home delivery options.\n\nYou don’t have this highlighted.\n\nWant me to add it?","cta":"YES/NO","send_as":"vera","suppression_key":"delivery:m006","rationale":"Customer demand + gap."}
+
+{"test_id":"T20","body":"Dr. Meera, Google trends show 'teeth whitening' searches up 40%.\n\nThis is a strong opportunity.\n\nWant me to promote it?","cta":"YES/NO","send_as":"vera","suppression_key":"trend:m001","rationale":"Trend + action."}
+
+{"test_id":"T21","body":"GymFit, member retention dropped this month.\n\nWe can run a re-engagement campaign.\n\nWant me to set it up?","cta":"YES/NO","send_as":"vera","suppression_key":"retention:m004","rationale":"Retention insight."}
+
+{"test_id":"T22","body":"SalonGlow, your rating is 4.2★ vs peer avg 4.6★.\n\nImproving reviews can boost traffic.\n\nWant help?","cta":"YES/NO","send_as":"vera","suppression_key":"rating:m005","rationale":"Peer comparison."}
+
+{"test_id":"T23","body":"Pizza Junction, your lunch orders are lower than dinner.\n\nWe can fix this with targeted offers.\n\nWant me to create one?","cta":"YES/NO","send_as":"vera","suppression_key":"lunch:m003","rationale":"Time-based insight."}
+
+{"test_id":"T24","body":"Dr. Meera, your GBP is not verified yet.\n\nUnverified profiles lose visibility.\n\nWant me to help verify it?","cta":"YES/NO","send_as":"vera","suppression_key":"gbp:m001","rationale":"Critical issue + fix."}
+
+{"test_id":"T25","body":"GymFit, new year season drives peak signups.\n\nYou should prepare early.\n\nWant me to draft a campaign?","cta":"YES/NO","send_as":"vera","suppression_key":"season:m004","rationale":"Seasonal planning."}
+
+{"test_id":"T26","body":"SalonGlow, weekday afternoons are underutilized.\n\nWe can fill them with offers.\n\nWant me to create one?","cta":"YES/NO","send_as":"vera","suppression_key":"afternoon:m005","rationale":"Gap optimization."}
+
+{"test_id":"T27","body":"PharmaCare, repeat customers drive 60% revenue.\n\nYou’re not engaging them currently.\n\nWant me to start reminders?","cta":"YES/NO","send_as":"vera","suppression_key":"repeat:m006","rationale":"Retention insight."}
+
+{"test_id":"T28","body":"Dr. Meera, 2 competitors nearby added new offers this week.\n\nYou’re currently inactive.\n\nWant to respond?","cta":"YES/NO","send_as":"vera","suppression_key":"comp:m001","rationale":"Competition + urgency."}
+
+{"test_id":"T29","body":"Pizza Junction, delivery searches are rising.\n\nYou can capture more orders with better visibility.\n\nWant me to improve it?","cta":"YES/NO","send_as":"vera","suppression_key":"delivery:m003","rationale":"Trend + opportunity."}
+
+{"test_id":"T30","body":"GymFit, inactive members haven’t returned in 30 days.\n\nThis is your win-back opportunity.\n\nWant me to message them?","cta":"YES/NO","send_as":"vera","suppression_key":"winback:m004","rationale":"Winback trigger."}
