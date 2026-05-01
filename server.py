@@ -50,7 +50,7 @@ def metadata():
         "team_members": ["Ashish Jha"],
         "model": "deterministic-rule-engine",
         "approach": "4-context composer with trigger routing, consent checks, urgency ranking, and multi-turn handling",
-        "version": "3.0",
+        "version": "4.0",
         "submitted_at": datetime.utcnow().isoformat() + "Z"
     }
 
@@ -107,7 +107,7 @@ def tick(data: dict):
     trigger_ids = sorted(trigger_ids, key=trigger_priority, reverse=True)
     used_merchants = set()
 
-    for trig_id in trigger_ids[:5]:
+    for trig_id in trigger_ids[:20]:
         trigger = store["trigger"].get(trig_id)
         if not trigger:
             continue
@@ -122,7 +122,9 @@ def tick(data: dict):
 
         category_slug = merchant.get("category_slug")
         category = store["category"].get(category_slug, {})
-        customer = store["customer"].get(trigger.get("customer_id"))
+
+        customer_id = trigger.get("customer_id") or trigger.get("payload", {}).get("customer_id")
+        customer = store["customer"].get(customer_id) if customer_id else None
 
         result = compose(category, merchant, trigger, customer)
 
@@ -134,21 +136,28 @@ def tick(data: dict):
         action = {
             "conversation_id": conv_id,
             "merchant_id": merchant_id,
-            "customer_id": trigger.get("customer_id"),
+            "customer_id": customer_id,
             "send_as": result.get("send_as", "vera"),
             "trigger_id": trig_id,
             "template_name": result.get("template_name", f"vera_{trigger.get('kind', 'general')}_v1"),
             "template_params": result.get("template_params", []),
-            "body": result["body"],
+            "body": result.get("body", ""),
             "cta": result.get("cta", "YES/NO"),
             "suppression_key": result.get("suppression_key", trigger.get("suppression_key")),
             "rationale": result.get("rationale", "Context-aware Vera message.")
         }
 
+        if not action["body"]:
+            continue
+
         conversations[conv_id] = {
             "merchant_id": merchant_id,
-            "customer_id": trigger.get("customer_id"),
+            "customer_id": customer_id,
             "trigger_id": trig_id,
+            "trigger_kind": trigger.get("kind"),
+            "trigger_payload": trigger.get("payload", {}),
+            "merchant_name": merchant.get("identity", {}).get("name"),
+            "send_as": action["send_as"],
             "turns": [
                 {
                     "from": "bot",
@@ -172,6 +181,11 @@ def reply(data: dict):
     state = conversations.get(conv_id, {
         "merchant_id": data.get("merchant_id"),
         "customer_id": data.get("customer_id"),
+        "trigger_id": None,
+        "trigger_kind": None,
+        "trigger_payload": {},
+        "merchant_name": None,
+        "send_as": None,
         "turns": []
     })
 
@@ -180,6 +194,8 @@ def reply(data: dict):
         "body": msg,
         "ts": data.get("received_at", datetime.utcnow().isoformat() + "Z")
     })
+
+    state["last_from_role"] = data.get("from_role", "merchant")
 
     result = respond(state, msg)
 
