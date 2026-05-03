@@ -72,6 +72,87 @@ def category_voice(category, merchant):
     return "peer"
 
 
+def merchant_place(merchant):
+    identity = merchant.get("identity", {})
+    locality = identity.get("locality")
+    city = identity.get("city")
+
+    if locality and city:
+        return f"{locality}, {city}"
+    if locality:
+        return locality
+    if city:
+        return city
+    return None
+
+
+def category_label(category, merchant):
+    slug = merchant.get("category_slug") or category.get("slug", "business")
+    return slug.replace("_", " ").replace("-", " ")
+
+
+def merchant_context_line(merchant, category):
+    parts = []
+
+    place = merchant_place(merchant)
+    if place:
+        parts.append(place)
+
+    cat = category_label(category, merchant)
+    if cat:
+        parts.append(cat)
+
+    subscription = merchant.get("subscription", {})
+    plan = subscription.get("plan")
+    days = subscription.get("days_remaining")
+
+    if plan and days is not None:
+        parts.append(f"{plan} plan, {days} days left")
+
+    if parts:
+        return "Context: " + " • ".join(parts) + "."
+
+    return ""
+
+
+def customer_aggregate_line(merchant):
+    agg = merchant.get("customer_aggregate", {})
+    total = agg.get("total_unique_ytd")
+    lapsed = agg.get("lapsed_180d_plus")
+    retention = agg.get("retention_6mo_pct")
+
+    facts = []
+
+    if total:
+        facts.append(f"{total} customers YTD")
+    if lapsed:
+        facts.append(f"{lapsed} lapsed 180d+")
+    if retention is not None:
+        facts.append(f"{int(float(retention) * 100)}% 6mo retention")
+
+    if facts:
+        return "Customer base: " + ", ".join(facts) + "."
+
+    return ""
+
+
+def voice_line(category, merchant):
+    voice = category_voice(category, merchant)
+
+    if voice == "clinical-peer":
+        return "Tone: clinical, factual, no overclaims."
+    if voice == "warm-practical":
+        return "Tone: warm, practical, service-first."
+    if voice == "operator-focused":
+        return "Tone: direct, demand and revenue focused."
+    if voice == "coach-like":
+        return "Tone: motivating, action-oriented."
+    if voice == "precise-trustworthy":
+        return "Tone: precise, trust-first, no exaggeration."
+
+    return ""
+
+
 def get_digest_item(category, trigger):
     payload = trigger.get("payload", {})
 
@@ -133,6 +214,10 @@ def compose(
     voice = category_voice(category, merchant)
     peer_ctr = get_peer_ctr(category)
 
+    context_line = merchant_context_line(merchant, category)
+    customer_line = customer_aggregate_line(merchant)
+    tone_line = voice_line(category, merchant)
+
     perf = merchant.get("performance", {})
     signals = merchant.get("signals", [])
 
@@ -152,6 +237,9 @@ def compose(
             body += f" {pct(delta)}"
 
         body += f" in the last {window}."
+
+        if context_line:
+            body += f"\n{context_line}"
 
         facts = []
         if views is not None:
@@ -189,7 +277,7 @@ def compose(
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": f"Performance dip using merchant metrics, peer benchmark, offer context, and {voice} tone."
+            "rationale": f"Performance dip using merchant metrics, location/category context, peer benchmark, offer context, and {voice} tone."
         }
 
     # ---------- PERFORMANCE SPIKE ----------
@@ -205,6 +293,9 @@ def compose(
 
         body += "."
 
+        if context_line:
+            body += f"\n{context_line}"
+
         if driver:
             body += f"\nLikely driver: {driver}."
 
@@ -219,7 +310,7 @@ def compose(
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "Performance spike converted into a timely campaign opportunity."
+            "rationale": f"Performance spike converted into a timely campaign using merchant context and {voice} tone."
         }
 
     # ---------- RESEARCH DIGEST ----------
@@ -233,8 +324,14 @@ def compose(
 
         body = f"{name}, {title}."
 
+        if tone_line:
+            body += f"\n{tone_line}"
+
+        if customer_line:
+            body += f"\n{customer_line}"
+
         if trial_n:
-            body += f" It covers {int(trial_n):,} cases."
+            body += f"\nIt covers {int(trial_n):,} cases."
 
         if segment:
             body += f"\nRelevant for your {str(segment).replace('_', ' ')} cohort."
@@ -250,7 +347,7 @@ def compose(
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "Research digest grounded in category context, source, and merchant-relevant next action."
+            "rationale": f"Research digest grounded in category source, customer aggregate, and {voice} tone."
         }
 
     # ---------- COMPETITOR ----------
@@ -266,6 +363,9 @@ def compose(
 
         body += "."
 
+        if context_line:
+            body += f"\n{context_line}"
+
         if their_offer:
             body += f"\nThey’re pushing: “{their_offer}”."
 
@@ -280,7 +380,7 @@ def compose(
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "Competitor trigger uses competitor payload and merchant/category offer."
+            "rationale": f"Competitor trigger uses competitor payload, location/category context, and merchant offer."
         }
 
     # ---------- REVIEW THEME ----------
@@ -296,6 +396,9 @@ def compose(
 
         body += "."
 
+        if context_line:
+            body += f"\n{context_line}"
+
         if quote:
             body += f"\nExample: “{quote}”."
 
@@ -307,7 +410,7 @@ def compose(
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "Review theme converted into reputation-management action."
+            "rationale": f"Review theme converted into reputation action using merchant context and {voice} tone."
         }
 
     # ---------- REGULATION CHANGE ----------
@@ -316,6 +419,12 @@ def compose(
         category_name = payload.get("category") or merchant.get("category_slug", "your category")
 
         body = f"{name}, there is a compliance update for {category_name}."
+
+        if tone_line:
+            body += f"\n{tone_line}"
+
+        if context_line:
+            body += f"\n{context_line}"
 
         if deadline:
             body += f"\nDeadline: {human_datetime(deadline)}."
@@ -328,7 +437,7 @@ def compose(
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "Regulation trigger handled with deadline and checklist action."
+            "rationale": f"Regulation trigger handled with category voice, merchant context, deadline, and checklist action."
         }
 
     # ---------- SUPPLY ALERT ----------
@@ -338,6 +447,9 @@ def compose(
         manufacturer = payload.get("manufacturer")
 
         body = f"{name}, urgent supply alert."
+
+        if context_line:
+            body += f"\n{context_line}"
 
         if molecule:
             body += f"\nMolecule: {molecule}."
@@ -356,7 +468,7 @@ def compose(
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "Supply alert handled with provided product/batch details."
+            "rationale": "Supply alert handled with provided product/batch details and merchant context."
         }
 
     # ---------- FESTIVAL ----------
@@ -375,6 +487,9 @@ def compose(
 
         body += "."
 
+        if context_line:
+            body += f"\n{context_line}"
+
         if offer:
             body += f"\nBest move: promote “{offer}” with a timely post."
 
@@ -386,7 +501,7 @@ def compose(
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "Festival trigger turned into timely category campaign."
+            "rationale": f"Festival trigger turned into timely category campaign using merchant context and offer."
         }
 
     # ---------- IPL MATCH ----------
@@ -396,6 +511,9 @@ def compose(
         match_time = payload.get("match_time_iso")
 
         body = f"{name}, {match} is today."
+
+        if context_line:
+            body += f"\n{context_line}"
 
         if venue:
             body += f"\nVenue: {venue}."
@@ -411,7 +529,7 @@ def compose(
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "IPL trigger uses human-readable time and timely campaign framing."
+            "rationale": "IPL trigger uses human-readable time, merchant context, and timely campaign framing."
         }
 
     # ---------- CATEGORY SEASONAL / TREND / WEATHER / LOCAL EVENT ----------
@@ -433,6 +551,9 @@ def compose(
             if trends:
                 body += f"\nSignals: {', '.join(trends[:3])}."
 
+        if context_line:
+            body += f"\n{context_line}"
+
         if offer:
             body += f"\nBest move: promote “{offer}” with a timely post."
 
@@ -444,7 +565,7 @@ def compose(
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "External trigger converted into timely action without inventing facts."
+            "rationale": f"External trigger converted into timely action with category and merchant context."
         }
 
     # ---------- MILESTONE ----------
@@ -461,7 +582,12 @@ def compose(
         if milestone:
             body += f" — close to {milestone}"
 
-        body += ".\nThis is useful social proof for your profile."
+        body += "."
+
+        if context_line:
+            body += f"\n{context_line}"
+
+        body += "\nThis is useful social proof for your profile."
         body += f"\n{cta_for(kind)}"
 
         return {
@@ -469,7 +595,7 @@ def compose(
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "Milestone trigger converted into social-proof content."
+            "rationale": "Milestone trigger converted into social-proof content with merchant context."
         }
 
     # ---------- GBP UNVERIFIED ----------
@@ -477,6 +603,9 @@ def compose(
         uplift = payload.get("estimated_uplift_pct")
 
         body = f"{name}, your Google profile is still unverified."
+
+        if context_line:
+            body += f"\n{context_line}"
 
         if uplift:
             body += f"\nEstimated upside after verification: {pct(uplift)}."
@@ -489,7 +618,7 @@ def compose(
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "GBP verification trigger handled with direct next step."
+            "rationale": "GBP verification trigger handled with merchant context and direct next step."
         }
 
     # ---------- ACTIVE PLANNING / DORMANT / CURIOUS ----------
@@ -501,16 +630,21 @@ def compose(
             body = f"{name}, continuing from your message: “{last_msg}”."
         elif kind in ["curious_ask_due", "scheduled_recurring"]:
             body = f"{name}, quick question: what’s the most asked service this week?"
+            if context_line:
+                body += f"\n{context_line}"
             body += "\nTell me in one line — I’ll turn it into a post or offer."
             return {
                 "body": body,
                 "cta": "open_ended",
                 "send_as": "vera",
                 "suppression_key": suppression_key,
-                "rationale": "Curiosity-driven engagement to increase merchant response frequency."
+                "rationale": "Curiosity-driven engagement using merchant/category context."
             }
         else:
             body = f"{name}, this is a good moment to restart growth."
+
+        if context_line:
+            body += f"\n{context_line}"
 
         body += f"\nI can turn “{topic}” into one clear action."
         body += f"\n{cta_for(kind)}"
@@ -520,7 +654,7 @@ def compose(
             "cta": "YES/NO",
             "send_as": "vera",
             "suppression_key": suppression_key,
-            "rationale": "Planning/dormancy trigger handled with low-friction action."
+            "rationale": "Planning/dormancy trigger handled with low-friction action and merchant context."
         }
 
     # ---------- CUSTOMER RECALL ----------
